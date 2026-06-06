@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dca-bot"
-version = "0.1.0"
-description = "Dollar-cost-averaging (DCA) bot with scheduling and backtest — by Viprasol Tech."
+version = "0.2.0"
+description = "Dollar-cost-averaging (DCA) bot with value-averaging, dip-buy, multi-asset portfolios and performance reports — by Viprasol Tech."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -14,6 +14,10 @@ keywords = [
   "dca-bot",
   "dca",
   "dollar-cost-averaging",
+  "value-averaging",
+  "dip-buying",
+  "portfolio",
+  "backtest",
   "trading-bot",
   "crypto",
   "python",

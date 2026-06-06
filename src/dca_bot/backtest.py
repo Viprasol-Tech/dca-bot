@@ -1,8 +1,10 @@
-"""Backtest a DCA strategy over a historical price series.
+"""Backtest an accumulation strategy over a historical price series.
 
-Replays a :class:`~dca_bot.dca.DCAStrategy` against a list of prices, feeding
+Replays any strategy implementing the :class:`~dca_bot.strategies.Strategy`
+protocol (plain DCA, value averaging, dip-buy) against a list of prices, feeding
 each buy into a :class:`~dca_bot.portfolio.Portfolio`, and reports the units
-accumulated, average cost, final mark-to-market value and ROI.
+accumulated, average cost, final mark-to-market value, ROI and the worst
+peak-to-trough drawdown of the position's equity curve.
 
 Part of DCA Bot by Viprasol Tech Private Limited (https://viprasol.com).
 """
@@ -11,15 +13,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dca_bot.dca import DCAStrategy
 from dca_bot.portfolio import Portfolio
+from dca_bot.strategies import Strategy
 
 
 @dataclass(frozen=True)
 class BacktestResult:
-    """Outcome of a DCA backtest over a price series.
+    """Outcome of a strategy backtest over a price series.
 
     Attributes:
+        strategy: Human-readable name of the strategy that was run.
         num_buys: Number of buys executed.
         total_units: Total units accumulated.
         total_spent: Total quote currency spent.
@@ -28,8 +31,11 @@ class BacktestResult:
         final_value: Mark-to-market value at ``final_price``.
         pnl: Profit/loss, ``final_value - total_spent``.
         roi: Return on investment as a fraction of ``total_spent``.
+        max_drawdown: Worst peak-to-trough decline of unrealised PnL across the
+            series, as a non-negative fraction of the peak invested capital.
     """
 
+    strategy: str
     num_buys: int
     total_units: float
     total_spent: float
@@ -38,13 +44,35 @@ class BacktestResult:
     final_value: float
     pnl: float
     roi: float
+    max_drawdown: float
 
 
-def run_backtest(strategy: DCAStrategy, prices: list[float]) -> BacktestResult:
+def _max_drawdown(equity: list[float]) -> float:
+    """Worst peak-to-trough decline of an equity curve, as a fraction.
+
+    Args:
+        equity: Sequence of portfolio values over time.
+
+    Returns:
+        The maximum drawdown in ``[0, 1]``. Returns 0.0 for an empty series or a
+        series whose running peak never exceeds zero.
+    """
+    peak = 0.0
+    worst = 0.0
+    for value in equity:
+        peak = max(peak, value)
+        if peak > 0:
+            drawdown = (peak - value) / peak
+            worst = max(worst, drawdown)
+    return worst
+
+
+def run_backtest(strategy: Strategy, prices: list[float]) -> BacktestResult:
     """Run ``strategy`` over ``prices`` and report the result.
 
     Args:
-        strategy: The DCA strategy to replay.
+        strategy: Any object implementing the
+            :class:`~dca_bot.strategies.Strategy` protocol.
         prices: Sequence of positive unit prices, one per tick.
 
     Returns:
@@ -58,8 +86,16 @@ def run_backtest(strategy: DCAStrategy, prices: list[float]) -> BacktestResult:
 
     portfolio = Portfolio()
     result = strategy.run(prices)
-    for buy in result.buys:
-        portfolio.buy(buy.quote_amount, buy.price)
+
+    # Build the equity curve by replaying buys against the price series so the
+    # drawdown reflects how the position's value evolved tick by tick.
+    buys_by_tick = {buy.tick: buy for buy in result.buys}
+    equity: list[float] = []
+    for tick, price in enumerate(prices):
+        if tick in buys_by_tick:
+            buy = buys_by_tick[tick]
+            portfolio.buy(buy.quote_amount, buy.price)
+        equity.append(portfolio.value(price))
 
     final_price = prices[-1]
     final_value = portfolio.value(final_price)
@@ -68,6 +104,7 @@ def run_backtest(strategy: DCAStrategy, prices: list[float]) -> BacktestResult:
     roi = pnl / total_spent if total_spent > 0 else 0.0
 
     return BacktestResult(
+        strategy=strategy.name,
         num_buys=len(result.buys),
         total_units=portfolio.units,
         total_spent=total_spent,
@@ -76,4 +113,5 @@ def run_backtest(strategy: DCAStrategy, prices: list[float]) -> BacktestResult:
         final_value=final_value,
         pnl=pnl,
         roi=roi,
+        max_drawdown=_max_drawdown(equity),
     )

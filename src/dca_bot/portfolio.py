@@ -89,3 +89,110 @@ class Portfolio:
             ValueError: If ``price`` is negative.
         """
         return self.value(price) - self.cost_basis
+
+
+class MultiAssetPortfolio:
+    """Track many single-asset :class:`Portfolio` holdings keyed by symbol.
+
+    Each symbol gets its own sub-portfolio, created lazily on first buy. The
+    aggregate cost basis, value and PnL are simple sums across the holdings.
+
+    Args:
+        symbols: Optional symbols to pre-create with empty holdings.
+    """
+
+    def __init__(self, symbols: list[str] | None = None) -> None:
+        self._holdings: dict[str, Portfolio] = {}
+        for symbol in symbols or []:
+            self._holdings[self._normalize(symbol)] = Portfolio()
+
+    @staticmethod
+    def _normalize(symbol: str) -> str:
+        """Normalise a symbol to a non-empty upper-case key."""
+        key = symbol.strip().upper()
+        if not key:
+            raise ValueError("symbol must not be empty")
+        return key
+
+    @property
+    def symbols(self) -> list[str]:
+        """Symbols currently tracked, in insertion order."""
+        return list(self._holdings)
+
+    def holding(self, symbol: str) -> Portfolio:
+        """Return the sub-portfolio for ``symbol``, creating it if needed.
+
+        Args:
+            symbol: Asset symbol (case-insensitive).
+
+        Returns:
+            The :class:`Portfolio` for that symbol.
+        """
+        key = self._normalize(symbol)
+        if key not in self._holdings:
+            self._holdings[key] = Portfolio()
+        return self._holdings[key]
+
+    def buy(self, symbol: str, quote_amount: float, price: float) -> float:
+        """Buy ``symbol`` for ``quote_amount`` at ``price``.
+
+        Args:
+            symbol: Asset symbol (case-insensitive).
+            quote_amount: Quote currency to spend. Must be > 0.
+            price: Unit price. Must be > 0.
+
+        Returns:
+            The units acquired by this buy.
+        """
+        return self.holding(symbol).buy(quote_amount, price)
+
+    def cost_basis(self) -> float:
+        """Total quote currency spent across every holding."""
+        return sum(p.cost_basis for p in self._holdings.values())
+
+    def value(self, prices: dict[str, float]) -> float:
+        """Aggregate mark-to-market value at the supplied ``prices``.
+
+        Args:
+            prices: Mapping of symbol to current unit price. Every tracked
+                symbol with units must be present.
+
+        Returns:
+            The summed value of all holdings.
+
+        Raises:
+            KeyError: If a held symbol is missing from ``prices``.
+        """
+        priced = {self._normalize(s): p for s, p in prices.items()}
+        total = 0.0
+        for key, holding in self._holdings.items():
+            if holding.units <= 0:
+                continue
+            if key not in priced:
+                raise KeyError(f"missing price for {key}")
+            total += holding.value(priced[key])
+        return total
+
+    def unrealized_pnl(self, prices: dict[str, float]) -> float:
+        """Aggregate unrealised PnL at the supplied ``prices``."""
+        return self.value(prices) - self.cost_basis()
+
+    def weights(self, prices: dict[str, float]) -> dict[str, float]:
+        """Value-weighted allocation of each held symbol.
+
+        Args:
+            prices: Mapping of symbol to current unit price.
+
+        Returns:
+            Mapping of symbol to its fraction of total value. Empty when the
+            portfolio has no value.
+        """
+        total = self.value(prices)
+        if total <= 0:
+            return {}
+        priced = {self._normalize(s): p for s, p in prices.items()}
+        return {
+            key: holding.value(priced[key]) / total
+            for key, holding in self._holdings.items()
+            if holding.units > 0
+        }
