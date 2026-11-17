@@ -72,7 +72,9 @@ prices = [100.0, 80.0, 120.0, 90.0, 110.0]
 for kind in ("dca", "value-averaging", "dip-buy"):
     strat = build_strategy(kind, amount=100.0, interval=1)
     r = report_strategy("BTC", strat, prices)
-    print(f"{r.strategy:>16}  avg=${r.average_cost:7.2f}  ROI={r.roi:+.2%}  maxDD={r.max_drawdown:.2%}")
+    print(
+        f"{r.strategy:>16}  avg=${r.average_cost:7.2f}  ROI={r.roi:+.2%}  maxDD={r.max_drawdown:.2%}"
+    )
 ```
 
 ### Backtest a multi-asset config
@@ -103,9 +105,9 @@ book.buy("BTC", quote_amount=100.0, price=20_000.0)
 book.buy("ETH", quote_amount=100.0, price=1_500.0)
 
 prices = {"BTC": 25_000.0, "ETH": 1_800.0}
-print(book.value(prices))          # mark-to-market across all holdings
-print(book.unrealized_pnl(prices)) # aggregate PnL
-print(book.weights(prices))        # value-weighted allocation per symbol
+print(book.value(prices))  # mark-to-market across all holdings
+print(book.unrealized_pnl(prices))  # aggregate PnL
+print(book.weights(prices))  # value-weighted allocation per symbol
 ```
 
 ## 🏗️ Architecture
